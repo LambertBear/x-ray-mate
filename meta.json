@@ -1,0 +1,16 @@
+{ 
+   "licenseType" : "CC BY", 
+   "creatorName" : "LambertBear", 
+   "packageName" : "X-Ray-Mate", 
+   "includeVersionsInReferences" : "true", 
+   "description" : "", 
+   "credits" : "", 
+   "instructions" : "", 
+   "promotionalLink" : "https://www.github.com/LambertBear/x-ray-mate", 
+   "programVersion" : "0.1", 
+   "contentList" : [ 
+      "Custom/Scripts/LambertBear/xray_mate.cs"
+   ], 
+   "dependencies" : { 
+   }
+}
