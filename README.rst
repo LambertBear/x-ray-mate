@@ -3,7 +3,7 @@ X-Ray-Mate
 
 X-Ray plugin for Virt-A-Mate
 
-.. image:: docs/example.jpgw
+.. image:: docs/example.jpg
   :width: 400
   :alt: Example image
 
