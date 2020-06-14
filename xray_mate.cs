@@ -3,16 +3,23 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using SimpleJSON;
+// using MaterialOptionsWrapper;
 
 namespace MVRPlugin {
+
 	public class XRayMate : MVRScript {
 
-        private const int BASE_QUEUE = 2410;
-		private const int MAX_QUEUE_OFFSET = 6;
-        private const int DEFAULT_CLOTHING_LAYER = 2;
+        public const int BASE_QUEUE = 3000;
+		public const int MAX_QUEUE_OFFSET = 6;
+        public const int DEFAULT_CLOTHING_LAYER = 2;
+		// I have to go to programming jail
+		public List<string> AVAIL_LAYERS = new List<string>(new string[] {"-", "0", "1", "2", "3"});
+
         public JSONStorableFloat power;
-		public JSONStorableAction refresh;
+		public JSONStorableAction refresh_list;
+		public JSONStorableAction refresh_materials;
 		public List<Atom> people_list = new List<Atom>();
+		public List<TransparentClothingItem> transparent_clothing_list = new List<TransparentClothingItem>();
         protected Material xray_mat;
 		protected int queue_previous = 0;
 
@@ -21,9 +28,13 @@ namespace MVRPlugin {
 		public string[] tags_L2 = {};
 		public string[] tags_L3 = {"Dress", "Sweater", "Skirt"};
 
+		public struct TransparentClothingItem{
+			public JSONStorableStringChooser layer;
+			public DAZSkinWrapMaterialOptions material;
+		}
+
         public override void Init() {
 			try {
-                string init_msg = "";
                 Renderer rend = containingAtom.GetComponentInChildren<Renderer>(false);
 				rend.shadowCastingMode = 0;
 				rend.receiveShadows = false;
@@ -36,9 +47,26 @@ namespace MVRPlugin {
                 RegisterFloat(power);
                 CreateSlider(power);
 
-				refresh = new JSONStorableAction("Update clothing", UpdateClothing);
-				RegisterAction(refresh);
-				UpdateClothing();
+				refresh_list = new JSONStorableAction("Reset clothing list", UpdateClothingList);
+				RegisterAction(refresh_list);
+				refresh_materials = new JSONStorableAction("Apply clothing layers", UpdateMaterials);
+				RegisterAction(refresh_materials);
+
+				var updateMaterialButton = CreateButton("Apply clothing layers", false);
+            	updateMaterialButton.button.onClick.AddListener(() =>
+				{
+					UpdateMaterials();
+				});
+				
+				var updateClothingButton = CreateButton("Reset clothing list", false);
+				updateClothingButton.buttonColor = new Color(1.0f, 0.4f, 0.4f);
+            	updateClothingButton.button.onClick.AddListener(() =>
+				{
+					UpdateClothingList();
+				});
+
+				UpdateClothingList();
+				UpdateMaterials();
 
 				//SuperController.LogMessage(init_msg);
 			}
@@ -47,7 +75,32 @@ namespace MVRPlugin {
 			}
 		}
 
-		void UpdateClothing() {
+		void UpdateMaterials() {
+
+			foreach(var c in transparent_clothing_list){
+				int queue;
+
+				if(c.layer.val == "-"){
+					queue = BASE_QUEUE - 1;
+				} else {
+					queue = BASE_QUEUE + 2 * int.Parse(c.layer.val) + 1;
+				}
+
+				foreach(Material mat in c.material.skinWrap.GPUmaterials){
+					mat.renderQueue = queue;
+				}
+				
+				if(c.material.skinWrap2 != null){
+					foreach(var mat in c.material.skinWrap2.GPUmaterials){
+						mat.renderQueue = queue;
+					}
+				}
+
+			}
+
+		}
+
+		void UpdateClothingList() {
 
 			string init_msg = "";
 			people_list = new List<Atom>();
@@ -58,16 +111,10 @@ namespace MVRPlugin {
 				}
 			}
 
-			foreach(Atom person in people_list){
-				var hair_controls = person.GetComponentsInChildren<HairSimControl>(false);
-				init_msg += hair_controls.Length.ToString() + " hair objects found\n";
-				foreach(var h in hair_controls){
-					var hair_rend = h.hairSettings.RenderSettings;
-					//hair_rend.material = new Material(hair_rend.material);
-					hair_rend.material.renderQueue = BASE_QUEUE - 1;
-					hair_rend.IsVisible = false;
-				}
+			foreach(var c in transparent_clothing_list){
+				RemovePopup(c.layer);
 			}
+			transparent_clothing_list = new List<TransparentClothingItem>(0);
 
 			foreach(Atom person in people_list){
 				DAZSkinWrapMaterialOptions[] clothes_materials = person.GetComponentsInChildren<DAZSkinWrapMaterialOptions>(false);
@@ -80,35 +127,39 @@ namespace MVRPlugin {
 					List<string> tags = new List<string>(new string[] {});
 					init_msg += "\n" + c.storeId + "\n    ";
 
+					if(c.storeId.Contains("Scalp")){
+						int queue = BASE_QUEUE - 1;
+
+						foreach(Material mat in c.skinWrap.GPUmaterials){
+							mat.renderQueue = queue;
+						}
+						if(c.skinWrap2 != null){
+							foreach(var mat in c.skinWrap2.GPUmaterials){
+								mat.renderQueue = queue;
+							}
+						}
+						continue;
+					} 
+
+					// Try to find the matching ClothingItemControl
 					foreach(DAZClothingItemControl ci in clothes_items){
-						// init_msg += ", " + ci.storeId;
 						if(c.storeId.Contains(ci.storeId.Replace("ItemControl", ""))){
 							tags = new List<string>(ci.clothingItem.tagsArray);
 						}
 					}
-					foreach(var si in tags){
-						init_msg += si.ToString() + ", ";
-					}
+					string default_layer = LayerFromTags(tags).ToString();
+					init_msg += "Default layer: " + default_layer + "\n";
 
-					int queue = BASE_QUEUE + 2 * LayerFromTags(tags) + 1;
-					if(c.storeId.Contains("Scalp")){
-						queue = BASE_QUEUE - 1;
-					} 
-					init_msg += "\n" + queue.ToString() + "\n";
-
-					foreach(var mat in c.skinWrap.GPUmaterials){
-						mat.renderQueue = queue;
-					}
-					
-					if(c.skinWrap2 != null){
-						foreach(var mat in c.skinWrap2.GPUmaterials){
-							mat.renderQueue = queue;
-						}
-					}
+					var tr_item = new TransparentClothingItem();
+					tr_item.material = c;
+					tr_item.layer = new JSONStorableStringChooser(c.storeId + "_layer", AVAIL_LAYERS, default_layer, c.storeId);
+					UIDynamicPopup udp = CreateScrollablePopup(tr_item.layer, true);
+					udp.labelWidth = 300.0f;
+					transparent_clothing_list.Add(tr_item);
 				}
-				SuperController.LogMessage(init_msg);
 			}
 			//SuperController.LogMessage(init_msg);
+			UpdateMaterials();
 		}
 
 		int LayerFromTags(List<string> tags) {
